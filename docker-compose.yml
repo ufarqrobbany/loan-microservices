@@ -72,7 +72,9 @@ services:
       - KAFKA_BROKER=kafka:9092
 
   audit:
-    build: ./services/audit
+    build: 
+      context: .
+      dockerfile: ./services/audit/Dockerfile
     depends_on: [kafka]
     environment:
       - KAFKA_BROKER=kafka:9092

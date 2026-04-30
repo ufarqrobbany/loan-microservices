@@ -1,4 +1,4 @@
-import express from 'express';
+ import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import axios from 'axios';
@@ -75,7 +75,7 @@ app.get('/health', async (_req, res) => {
 // ==============================
 // LOAN APPLY (WITH LOAD BALANCING)
 // ==============================
-app.post('/api/loans/apply', async (req, res) => {
+app.post('/api/loans/apply', async (req: Request, res: Response) => {
   const payload = req.body;
   const target = getLoanService();
 

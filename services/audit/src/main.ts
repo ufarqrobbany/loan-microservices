@@ -1,4 +1,4 @@
-import { createKafkaClient } from '../../libs/kafka/src/kafka.provider';
+import { createKafkaClient } from '../../../libs/kafka/src/kafka.provider';
 import * as fs from 'fs';
 import * as path from 'path';
 import express from 'express';
@@ -13,7 +13,7 @@ async function startKafkaConsumer() {
   await consumer.subscribe({ topic: 'audit.logged', fromBeginning: false });
   console.log('Audit service subscribed to audit.logged');
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ message }: any) => {
       const payload = JSON.parse(message.value.toString());
       console.log('AUDIT:', payload);
       const file = path.join(AUDIT_DIR, `${payload.applicationId || 'general'}.log`);
