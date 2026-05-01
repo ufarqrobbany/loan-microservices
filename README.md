@@ -37,6 +37,8 @@ Test examples
 - Force blacklist fail (deterministic):
   curl -X POST http://localhost:3000/api/loans/apply -H "Content-Type: application/json" -d '{"userId":"user-bad-1","amount":1000,"product":"STD","type":"UNSECURED"}'
 - Check audit via gateway:
-  curl http://localhost:3000/api/audit/<applicationId>
+  curl http://localhost:3000/api/audit/APP001
+  applicationId = APP001
+  the audit data  is available at audit_logs/APP001.log 
 
  
