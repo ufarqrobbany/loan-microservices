@@ -11,6 +11,7 @@ Requirements
 - Node.js 18+
 - npm / yarn
 - docker-desktop (windows) / docker Engine(linux)
+
 Quick start (Docker)
 1. Copy `.env.example` -> `.env` and customize.
 2. Build & start:
