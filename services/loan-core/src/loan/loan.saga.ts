@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createKafkaClient }  from '../common/kafka.provider';
+import { createKafkaClient } from '../common/kafka.provider';
 import { v4 as uuid } from 'uuid';
 import type { Producer } from 'kafkajs';
 
@@ -18,18 +18,17 @@ export class LoanSaga {
     })().catch(err => this.logger.error(err));
   }
 
-  private async waitForEvent(topic: string, applicationId: string, timeoutMs = 15000): Promise<any> {
+  private async waitForEvent(topic: string, applicationId: string, timeoutMs = 20000): Promise<any> {
     const kafka = createKafkaClient([this.kafkaBroker]);
     const groupId = `saga-waiter-${uuid()}`;
     const kp = await import('../common/kafka.provider');
     const consumer = await kp.createConsumer(kafka, groupId);
-    await consumer.subscribe({ topic, fromBeginning: false });
+
+    await consumer.subscribe({ topic, fromBeginning: true });
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(async () => {
-        try {
-          await consumer.disconnect();
-        } catch {}
+      const timer = setTimeout(() => {
+        consumer.disconnect().catch(() => { });
         reject(new Error(`Timeout waiting for ${topic} for ${applicationId}`));
       }, timeoutMs);
 
@@ -40,17 +39,19 @@ export class LoanSaga {
           try {
             const payload = JSON.parse(message.value!.toString());
             clearTimeout(timer);
-            await consumer.disconnect();
             resolve(payload);
+
+            setTimeout(() => consumer.disconnect().catch(() => { }), 10);
+
           } catch (err) {
             clearTimeout(timer);
-            await consumer.disconnect();
             reject(err);
+            setTimeout(() => consumer.disconnect().catch(() => { }), 10);
           }
         }
-      }).catch(async err => {
+      }).catch(err => {
         clearTimeout(timer);
-        try { await consumer.disconnect(); } catch {}
+        consumer.disconnect().catch(() => { });
         reject(err);
       });
     });
@@ -59,10 +60,12 @@ export class LoanSaga {
   async execute(applyLoanDto: any) {
     const applicationId = applyLoanDto.applicationId || uuid();
 
+    const kycPromise = this.waitForEvent('kyc.completed', applicationId, 20000);
+
     // ensure producer ready (simple retry)
     let retry = 0;
     while (!this.kafkaProducer && retry < 20) {
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 2000));
       retry++;
     }
     if (!this.kafkaProducer) throw new Error('Kafka producer not available');
@@ -76,7 +79,7 @@ export class LoanSaga {
 
     try {
       // Wait KYC
-      const kyc = await this.waitForEvent('kyc.completed', applicationId, 20000);
+      const kyc = await kycPromise;
       this.logger.log(`KYC result for ${applicationId}: ${kyc.kycStatus}`);
 
       if (kyc.kycStatus !== 'PASSED') {

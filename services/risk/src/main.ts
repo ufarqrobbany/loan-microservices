@@ -1,4 +1,4 @@
-import { createKafkaClient } from '../../libs/kafka/src/kafka.provider';
+import { createKafkaClient } from './kafka.provider';
 
 async function bootstrap() {
   const kafka = createKafkaClient([process.env.KAFKA_BROKER || 'kafka:9092']);
@@ -9,7 +9,7 @@ async function bootstrap() {
   await consumer.subscribe({ topic: 'credit.checked', fromBeginning: false });
   console.log('Risk service subscribed to credit.checked');
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ message }: any) => {
       const payload = JSON.parse(message.value.toString());
       console.log('Risk received credit.checked:', payload.applicationId);
       // simple risk rule based on score
@@ -17,7 +17,7 @@ async function bootstrap() {
       if (payload.score < 600) risk = 'HIGH';
       else if (payload.score < 700) risk = 'MEDIUM';
       const result = { applicationId: payload.applicationId, userId: payload.userId, risk, details: { score: payload.score }, checkedAt: new Date().toISOString() };
-      await producer.send({ topic: 'risk.checked', messages: [{ key: payload.applicationId, value: JSON.stringify(result) }]});
+      await producer.send({ topic: 'risk.checked', messages: [{ key: payload.applicationId, value: JSON.stringify(result) }] });
       console.log('Risk emitted risk.checked for', payload.applicationId, 'risk=', risk);
     }
   });

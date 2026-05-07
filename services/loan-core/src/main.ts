@@ -8,4 +8,7 @@ async function bootstrap() {
   await app.listen(port);
   console.log('Loan Core running on', port);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to start service:', err);
+  process.exit(1);
+});

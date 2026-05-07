@@ -1,4 +1,4 @@
-import { createKafkaClient } from '../../../libs/kafka/src/kafka.provider';
+import { createKafkaClient } from './kafka.provider';
 import * as fs from 'fs';
 import * as path from 'path';
 import express from 'express';

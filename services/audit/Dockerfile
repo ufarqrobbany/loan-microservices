@@ -1,15 +1,15 @@
-FROM node:18
+FROM node:18-alpine
 
 WORKDIR /app
 
-COPY . .
-
-WORKDIR /app/services/audit
+COPY package*.json ./
 
 RUN npm install
+
 RUN npm install -D @types/express @types/node
 
+COPY . .
+
 RUN npm run build
-RUN find /app/services/audit -name main.js
- 
-CMD ["node", "dist/services/audit/src/main.js"]
+
+CMD ["node", "dist/main.js"]

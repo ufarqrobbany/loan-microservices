@@ -1,7 +1,17 @@
 import { Kafka, Producer, Consumer } from 'kafkajs';
 
 export function createKafkaClient(brokers: string[]) {
-  const kafka = new Kafka({ brokers });
+  const kafka = new Kafka({
+    brokers,
+    connectionTimeout: 10000,
+    requestTimeout: 30000,
+    retry: {
+      initialRetryTime: 100,
+      retries: 20,
+      maxRetryTime: 30000,
+      factor: 2,
+    }
+  });
   return kafka;
 }
 

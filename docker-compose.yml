@@ -1,6 +1,7 @@
 version: "3.8"
 networks:
   app-network:
+    driver: bridge
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.1
@@ -8,11 +9,20 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports: ["2181:2181"]
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -z localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - app-network
+    restart: unless-stopped
+
   kafka:
     image: confluentinc/cp-kafka:7.4.1
-    depends_on: [zookeeper]
+    depends_on:
+      zookeeper:
+        condition: service_healthy
     hostname: kafka
     container_name: kafka
     environment:
@@ -21,7 +31,15 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
     networks:
       - app-network
 
@@ -34,6 +52,14 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pg_loan_core_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_LOAN_USER:-loan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app-network
 
   pg_kyc:
     image: postgres:15
@@ -44,66 +70,153 @@ services:
     ports: ["5433:5432"]
     volumes:
       - pg_kyc_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_KYC_USER:-kyc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app-network
 
   # Application services
   loan-core:
-    build: ./services/loan-core
-    depends_on: [kafka, pg_loan_core]
+    build:
+      context: ./services/loan-core
+      dockerfile: Dockerfile
+    networks:
+      - app-network 
+    depends_on:
+      pg_loan_core:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=loan-core
+      - PORT=3000
+      - KAFKA_BROKERS=kafka:9092
       - PG_LOAN_HOST=pg_loan_core
+      - PG_LOAN_PORT=5432
+      - PG_LOAN_USER=${PG_LOAN_USER:-loan}
+      - PG_LOAN_PASSWORD=${PG_LOAN_PASSWORD:-loanpass}
+      - PG_LOAN_DB=${PG_LOAN_DB:-loan_core}
     ports:
       - "3001:3000"
-
+    restart: unless-stopped
+  
   kyc:
-    build: ./services/kyc
-    depends_on: [kafka]
+    build:
+      context: ./services/kyc
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=kyc
+      - PORT=3000
+      - KAFKA_BROKERS=kafka:9092
+    networks:
+      - app-network
 
   credit:
-    build: ./services/credit
-    depends_on: [kafka]
+    build:
+      context: ./services/credit
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
       - KAFKA_BROKER=kafka:9092
+    networks:
+      - app-network
 
   risk:
-    build: ./services/risk
-    depends_on: [kafka]
+    build:
+      context: ./services/risk
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=risk
+      - PORT=3000
+      - KAFKA_BROKERS=kafka:9092
+    networks:
+      - app-network
 
   blacklist:
-    build: ./services/blacklist
-    depends_on: [kafka]
+    build:
+      context: ./services/blacklist
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=blacklist
+      - PORT=3000
+      - KAFKA_BROKERS=kafka:9092
+    networks:
+      - app-network
 
   audit: 
-    image: loan-microservices-audit:latest 
-    depends_on: [kafka]
+    build:
+      context: ./services/audit
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
-      - KAFKA_BROKER=kafka:9092
-      - AUDIT_HTTP_PORT=3010
+      - SERVICE_NAME=audit
+      - PORT=3010
+      - KAFKA_BROKERS=kafka:9092
+      - AUDIT_DIR=/app/audit_logs
     volumes:
       - ./audit_logs:/app/audit_logs
     ports:
     - "3010:3010"
     networks:
       - app-network 
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
 
   api-gateway:
-    build: ./services/api-gateway
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
     depends_on:
-      - loan-core
-      - audit
+      loan-core:
+        condition: service_started
+      audit:
+        condition: service_healthy
     environment:
-      - LOAN_CORE_URL=http://loan-core:3000
+      - SERVICE_NAME=api-gateway
+      - PORT=3000
+      - LOAN_CORE_SERVERS=http://loan-core:3000
       - AUDIT_URL=http://audit:3010
+      - SERVICES_KYC=http://kyc:3000
+      - SERVICES_CREDIT=http://credit:3000
+      - SERVICES_RISK=http://risk:3000
+      - SERVICES_BLACKLIST=http://blacklist:3000
     ports:
       - "3000:3000"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
 
 volumes:
   pg_loan_core_data:
