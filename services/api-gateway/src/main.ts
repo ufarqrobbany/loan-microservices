@@ -1,7 +1,8 @@
- import express, { Request, Response } from 'express';
+import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import axios from 'axios';
+import rateLimit from 'express-rate-limit';
 
 // ==============================
 // CONFIG
@@ -18,7 +19,20 @@ const PORT = Number(process.env.PORT || 3000);
 // APP INIT
 // ==============================
 const app = express();
+
+const limiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 menit
+  max: 10, // Limit tiap IP hanya bisa 10 request per windowMs
+  standardHeaders: true, // Balas dengan header X-RateLimit-Limit
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: 'Terlalu banyak request, coba lagi nanti.'
+  }
+});
+
 app.use(cors());
+app.use(limiter);
 app.use(bodyParser.json());
 
 // ==============================
